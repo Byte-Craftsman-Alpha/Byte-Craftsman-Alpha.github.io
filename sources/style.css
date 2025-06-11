@@ -380,6 +380,7 @@ main {
                     gap: 10px;
 
                     div.institute-logo {
+                        background: #FFF;
                         width: 40px;
                         height: 40px;
                         border: 1px solid var(--dividers);
@@ -521,6 +522,7 @@ main {
                         border: 1px solid var(--dividers);
                         border-radius: 8px;
                         display: flex;
+                        background: #FFF;
                         align-items: center;
                         justify-content: center;
 
