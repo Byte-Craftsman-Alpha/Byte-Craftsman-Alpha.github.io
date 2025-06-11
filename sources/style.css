@@ -587,6 +587,16 @@ main {
                     padding: 12px;
                     height: 120px;
 
+                    div.acions {
+                        a {
+                            svg {
+                                width: 18px;
+                                height: 18px;
+
+                            }
+                        }
+                    }
+
                     div.project-details {
                         display: flex;
                         gap: 8px;
