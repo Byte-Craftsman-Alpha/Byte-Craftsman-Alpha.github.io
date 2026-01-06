@@ -443,19 +443,91 @@
         
         // Fetch JSON data from GitHub
         const url = "https://raw.githubusercontent.com/Byte-Craftsman-Alpha/Byte-Craftsman-Alpha/refs/heads/main/aboutme.json";
+
+        function getValue(obj, paths, fallback = undefined) {
+            if (!obj) return fallback;
+            const pathList = Array.isArray(paths) ? paths : [paths];
+            for (const p of pathList) {
+                if (!p) continue;
+                const parts = String(p).split('.').filter(Boolean);
+                let cur = obj;
+                let ok = true;
+                for (const part of parts) {
+                    if (cur && Object.prototype.hasOwnProperty.call(cur, part)) {
+                        cur = cur[part];
+                    } else {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok && cur !== undefined && cur !== null) return cur;
+            }
+            return fallback;
+        }
+
+        function normalizeProfile(raw) {
+            const data = raw && typeof raw === 'object' ? raw : {};
+
+            const contact = getValue(data, ['contact', 'contacts'], {});
+            const address = getValue(data, ['address', 'location'], {});
+            const socials = getValue(data, ['social_accounts', 'social', 'socials'], {});
+
+            return {
+                name: getValue(data, ['name', 'full_name'], ''),
+                current_profession: getValue(data, ['current_profession', 'profession', 'title', 'role'], ''),
+                profile_photo: getValue(data, ['profile_photo', 'profilePhoto', 'avatar', 'photo'], ''),
+                current_company: getValue(data, ['current_company', 'company', 'organization', 'currentOrganization'], ''),
+                bio: getValue(data, ['bio', 'about', 'summary'], ''),
+                resume_link: getValue(data, ['resume_link', 'resume', 'resumeLink', 'cv_link', 'cv'], ''),
+
+                contact: {
+                    email: getValue(data, ['contact.email', 'contacts.email', 'email', 'mail'], ''),
+                    phone: getValue(data, ['contact.phone', 'contacts.phone', 'phone', 'mobile'], '')
+                },
+                address: {
+                    city: getValue(data, ['address.city', 'location.city', 'city', 'address.town'], '')
+                },
+                social_accounts: {
+                    github: getValue(socials, ['github', 'github_url', 'githubUrl'], getValue(data, ['github', 'github_url'], '')),
+                    linkedin: getValue(socials, ['linkedin', 'linkedin_url', 'linkedinUrl'], getValue(data, ['linkedin', 'linkedin_url'], '')),
+                    instagram: getValue(socials, ['instagram', 'instagram_url', 'instagramUrl'], getValue(data, ['instagram', 'instagram_url'], ''))
+                },
+
+                skills: getValue(data, ['skills', 'tech_stack', 'techStack'], []),
+                education: getValue(data, ['education', 'educations'], []),
+                projects: getValue(data, ['projects', 'project'], []),
+                certificates: getValue(data, ['certificates', 'certifications'], [])
+            };
+        }
         
         fetch(url)
-          .then(response => {
+          .then(async response => {
             if (!response.ok) {
               throw new Error(`HTTP error! Status: ${response.status}`);
             }
-            return response.json();
+            const text = await response.text();
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                const posMatch = String(e && e.message ? e.message : '').match(/position\s+(\d+)/i);
+                const pos = posMatch ? Number(posMatch[1]) : null;
+                if (Number.isFinite(pos)) {
+                    const start = Math.max(0, pos - 200);
+                    const end = Math.min(text.length, pos + 200);
+                    const snippet = text.slice(start, end);
+                    console.error('aboutme.json parse error near position:', pos);
+                    console.error('aboutme.json snippet around error:\n', snippet);
+                }
+                console.error('aboutme.json raw response (first 500 chars):\n', text.slice(0, 500));
+                throw e;
+            }
           })
           .then(data => {
             console.log("JSON data loaded:", data);
             // Handle both array and object responses
             const profileData = Array.isArray(data) ? data[0] : data;
-            populatePage(profileData);
+            const normalized = normalizeProfile(profileData);
+            populatePage(normalized);
             
             // Hide loading overlay with a small delay for smooth transition
             setTimeout(() => {
@@ -476,9 +548,9 @@
             const profileUsername = document.querySelector('p.text-primary-600');
             const profilePhoto = document.querySelector('img[alt="Aditya Chaudhari"]');
             
-            if (profileName) profileName.textContent = data.name;
-            if (profileUsername) profileUsername.textContent = data.current_profession;
-            if (profilePhoto) profilePhoto.src = data.profile_photo;
+            if (profileName) profileName.textContent = data.name || '';
+            if (profileUsername) profileUsername.textContent = data.current_profession || '';
+            if (profilePhoto && data.profile_photo) profilePhoto.src = data.profile_photo;
             
             // Update contact info
             const emailLink = document.querySelector('a[href^="mailto:"]');
@@ -486,54 +558,56 @@
             const locationText = document.querySelector('div:has(> .ri-map-pin-line)');
             const universityText = document.querySelector('div:has(> .ri-building-line)');
             
-            if (emailLink) {
+            if (emailLink && data.contact && data.contact.email) {
                 emailLink.href = `mailto:${data.contact.email}`;
                 emailLink.textContent = data.contact.email;
             }
-            if (phoneLink) {
-                phoneLink.href = `tel:+${data.contact.phone.replace(/[^\d+]/g, '')}`;
+            if (phoneLink && data.contact && data.contact.phone) {
+                const cleanedPhone = String(data.contact.phone).replace(/[^\d+]/g, '');
+                phoneLink.href = cleanedPhone ? `tel:+${cleanedPhone}` : 'tel:';
                 phoneLink.textContent = data.contact.phone;
             }
             if (locationText) {
                 const locationDiv = locationText.querySelector('p:last-child');
-                if (locationDiv) locationDiv.textContent = data.address.city;
+                if (locationDiv) locationDiv.textContent = (data.address && data.address.city) ? data.address.city : '';
             }
             if (universityText) {
                 const universityDiv = universityText.querySelector('p:last-child');
-                if (universityDiv) universityDiv.textContent = data.current_company;
+                if (universityDiv) universityDiv.textContent = data.current_company || '';
             }
             
             // Update resume link
             const resumeLink = document.querySelector('a[href*="hackerrank"]');
-            if (resumeLink) resumeLink.href = data.resume_link;
+            if (resumeLink && data.resume_link) resumeLink.href = data.resume_link;
             
             // Update social links
             const socialLinks = {
-                github: data.social_accounts.github,
-                linkedin: data.social_accounts.linkedin,
-                instagram: data.social_accounts.instagram
+                github: data.social_accounts ? data.social_accounts.github : '',
+                linkedin: data.social_accounts ? data.social_accounts.linkedin : '',
+                instagram: data.social_accounts ? data.social_accounts.instagram : ''
             };
             
             document.querySelectorAll('a[href*="github.com"]').forEach(link => {
-                link.href = socialLinks.github;
+                if (socialLinks.github) link.href = socialLinks.github;
             });
             document.querySelectorAll('a[href*="linkedin.com"]').forEach(link => {
-                link.href = socialLinks.linkedin;
+                if (socialLinks.linkedin) link.href = socialLinks.linkedin;
             });
             document.querySelectorAll('a[href*="instagram.com"]').forEach(link => {
-                link.href = socialLinks.instagram;
+                if (socialLinks.instagram) link.href = socialLinks.instagram;
             });
             
             // Update about section
             const aboutParagraph = document.querySelector('section:has(> .flex .ri-user-smile-line) p');
-            if (aboutParagraph) aboutParagraph.textContent = data.bio;
+            if (aboutParagraph) aboutParagraph.textContent = data.bio || '';
             
             // Update skills section
             const skillsContainer = document.querySelector('section:has(> .flex .ri-code-s-slash-line) .flex.flex-wrap');
             if (skillsContainer) {
                 skillsContainer.innerHTML = '';
                 const colors = ['blue', 'orange', 'blue', 'yellow', 'green', 'cyan', 'purple', 'red', 'teal', 'gray', 'indigo', 'gray', 'blue'];
-                data.skills.forEach((skill, index) => {
+                const skills = Array.isArray(data.skills) ? data.skills : [];
+                skills.forEach((skill, index) => {
                     const color = colors[index % colors.length];
                     const skillBadge = document.createElement('span');
                     
@@ -557,13 +631,13 @@
             }
             
             // Generate Education cards
-            generateEducationCards(data.education);
+            generateEducationCards(Array.isArray(data.education) ? data.education : []);
             
             // Generate Projects cards
-            generateProjectCards(data.projects);
+            generateProjectCards(Array.isArray(data.projects) ? data.projects : []);
             
             // Generate Certificates cards
-            generateCertificateCards(data.certificates);
+            generateCertificateCards(Array.isArray(data.certificates) ? data.certificates : []);
         }
         
         // Function to generate Education cards
@@ -620,7 +694,8 @@
             if (!container) return;
             
             container.innerHTML = '';
-            projectsData.forEach(project => {
+            const projects = Array.isArray(projectsData) ? projectsData : [];
+            projects.forEach(project => {
                 const projectCard = document.createElement('a');
                 projectCard.href = project.project_link;
                 projectCard.target = '_blank';
@@ -654,22 +729,24 @@
             if (!container) return;
             
             container.innerHTML = '';
-            certificatesData.forEach(cert => {
+            const certificates = Array.isArray(certificatesData) ? certificatesData : [];
+            certificates.forEach(cert => {
                 const certCard = document.createElement('div');
                 certCard.className = 'flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800 hover:shadow-sm transition-shadow';
                 
-                const initials = cert.issuing_authority.split(' ').map(word => word.charAt(0)).join('').toUpperCase();
+                const issuingAuthority = cert.issuing_authority || '';
+                const initials = issuingAuthority ? issuingAuthority.split(' ').map(word => word.charAt(0)).join('').toUpperCase() : 'C';
                 
                 certCard.innerHTML = `
                     <div class="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-lg bg-gray-200 dark:bg-gray-900 border border-gray-200 dark:border-gray-600">
                         <img src="${cert.authority_logo}" 
                              onerror="this.src='https://ui-avatars.com/api/?name=${initials}&background=random'" 
-                             alt="${cert.issuing_authority}" 
+                             alt="${issuingAuthority}" 
                              class="w-8 h-8 object-contain">
                     </div>
                     <div class="flex-grow min-w-0">
                         <h4 class="font-bold text-gray-900 dark:text-white text-sm truncate">${cert.certificate_name}</h4>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">${cert.certified_for} • ${cert.issuing_authority}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">${cert.certified_for} • ${issuingAuthority}</p>
                     </div>
                 `;
                 
